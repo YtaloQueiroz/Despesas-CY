@@ -68,6 +68,23 @@
             background-color: rgba(255,255,255,0.1);
         }
 
+        /* Transaction Item Dragging Styles */
+        .tx-item {
+            transition: all 0.2s;
+        }
+        .tx-item.dragging-tx {
+            opacity: 0.4;
+            background-color: #f1f5f9;
+            border: 2px dashed #cbd5e1;
+        }
+        .tx-handle {
+            cursor: grab;
+            touch-action: none; /* Melhora arrastar no mobile */
+        }
+        .tx-handle:active {
+            cursor: grabbing;
+        }
+
         /* Modal Animations & Fixes */
         .modal-overlay {
             transition: opacity 0.3s ease;
@@ -477,6 +494,7 @@
 
         // Variável para Drag and Drop
         let draggedTabId = null;
+        let draggedTxId = null; // Para transações
 
         // --- Inicialização ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -649,7 +667,7 @@
         }
 
 
-        // --- DRAG AND DROP LOGIC ---
+        // --- DRAG AND DROP LOGIC (ABAS) ---
         function handleDragStart(e, id) {
             draggedTabId = id;
             e.dataTransfer.effectAllowed = 'move';
@@ -688,6 +706,53 @@
             e.target.classList.remove('dragging');
             // Garante re-render para limpar estados visuais
             renderTabs();
+        }
+
+        // --- DRAG AND DROP LOGIC (TRANSAÇÕES) ---
+        function handleTxDragStart(e, id) {
+            draggedTxId = id;
+            e.dataTransfer.effectAllowed = 'move';
+            // Visual dragging class for TR
+            setTimeout(() => e.target.classList.add('dragging-tx'), 0);
+        }
+
+        function handleTxDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleTxDrop(e, targetId) {
+            e.preventDefault();
+            
+            // Cleanup visuals
+            document.querySelectorAll('.tx-item').forEach(el => el.classList.remove('dragging-tx'));
+
+            if (draggedTxId === null || draggedTxId === targetId) return;
+
+            // Encontrar índices no array COMPLETO de transações da aba ativa
+            let transactions = getActiveTransactions();
+            const fromIndex = transactions.findIndex(t => t.id === draggedTxId);
+            const toIndex = transactions.findIndex(t => t.id === targetId);
+
+            if (fromIndex !== -1 && toIndex !== -1) {
+                // Verificar se são do mesmo tipo para evitar confusão visual
+                // Embora tecnicamente possa misturar, visualmente elas são separadas
+                if (transactions[fromIndex].type !== transactions[toIndex].type) {
+                    return; // Ignora drop entre tipos diferentes
+                }
+
+                // Move no array
+                const [movedTx] = transactions.splice(fromIndex, 1);
+                transactions.splice(toIndex, 0, movedTx);
+                
+                setActiveTransactions(transactions); // Isso salva e atualiza UI
+            }
+            draggedTxId = null;
+        }
+
+        function handleTxDragEnd(e) {
+            e.target.classList.remove('dragging-tx');
+            updateUI(); // Garante que a UI limpe estilos residuais
         }
 
 
@@ -853,7 +918,7 @@
                     amount: parseFloat(amountInput.value),
                     type: typeInput.value
                 };
-                currentTrans.unshift(transaction);
+                currentTrans.unshift(transaction); // Adiciona no início (padrão)
                 
                 descInput.value = '';
                 amountInput.value = '';
@@ -1027,7 +1092,18 @@
                 const expenses = transactions.filter(t => t.type === 'expense');
 
                 const renderRow = (t, isIncome) => `
-                    <tr class="group hover:bg-${isIncome ? 'emerald' : 'rose'}-50 transition-colors">
+                    <tr 
+                        draggable="true"
+                        ondragstart="handleTxDragStart(event, ${t.id})"
+                        ondragover="handleTxDragOver(event)"
+                        ondrop="handleTxDrop(event, ${t.id})"
+                        ondragend="handleTxDragEnd(event)"
+                        class="group hover:bg-${isIncome ? 'emerald' : 'rose'}-50 transition-colors tx-item"
+                        data-type="${t.type}"
+                    >
+                        <td class="p-3 w-8 text-slate-300 hover:text-slate-500 tx-handle">
+                            <i data-lucide="grip-vertical" class="w-4 h-4 mx-auto"></i>
+                        </td>
                         <td class="p-3">
                             <div class="font-medium text-slate-700">${t.description}</div>
                             <div class="text-[10px] text-${isIncome ? 'emerald' : 'rose'}-600/70 hidden group-hover:block transition-all">Registrado em ${new Date(t.id).toLocaleDateString()}</div>
